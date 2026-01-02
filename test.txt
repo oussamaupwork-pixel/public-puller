@@ -1,0 +1,45 @@
+name: Run gp-api then gp-explorer
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  run-projects:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout gp-api (private repo)
+        uses: actions/checkout@v4
+        with:
+          repository: bakkaliomar500/gp-api
+          token: ${{ secrets.GH_PAT }}
+          path: gp-api
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install & run gp-api
+        working-directory: gp-api
+        run: |
+          npm install
+          npm run build || true
+          npm start &
+          sleep 10
+
+      - name: Checkout gp-explorer (private repo)
+        uses: actions/checkout@v4
+        with:
+          repository: bakkaliomar500/gp-explorer
+          token: ${{ secrets.GH_PAT }}
+          path: gp-explorer
+
+      - name: Install & run gp-explorer
+        working-directory: gp-explorer
+        run: |
+          npm install
+          npm run build || true
+          npm start
