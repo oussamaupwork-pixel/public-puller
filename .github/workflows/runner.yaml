@@ -1,0 +1,77 @@
+name: Run gp-api then gp-explorer
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main ]
+
+jobs:
+  run-projects:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Prepare SSH known_hosts
+        shell: bash
+        run: |
+          set -e
+          mkdir -p ~/.ssh
+          chmod 700 ~/.ssh
+          ssh-keyscan -H 75.119.156.81 >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+      - name: Install sshpass
+        run: sudo apt-get update && sudo apt-get install -y sshpass
+
+      - name: Create SSH tunnel (password-based)
+        shell: bash
+        env:
+          SSH_PASSWORD: ${{ secrets.SSH_PRIVATE_KEY }}
+        run: |
+          ssh-keyscan -H 75.119.156.81 >> ~/.ssh/known_hosts
+
+          sshpass -p "$SSH_PASSWORD" ssh -N \
+            -o PreferredAuthentications=password \
+            -o PubkeyAuthentication=no \
+            -o StrictHostKeyChecking=yes \
+            -o ExitOnForwardFailure=yes \
+            -L 127.0.0.1:27017:127.0.0.1:27017 \
+            -L 127.0.0.1:6379:127.0.0.1:6379 \
+            root@75.119.156.81 &
+          sleep 3
+
+      - name: Checkout gp-api (private)
+        uses: actions/checkout@v4
+        with:
+          repository: bakkaliomar500/gp-api
+          token: ${{ secrets.GH_PAT }}
+          ref: main
+          path: gp-api
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install & run gp-api
+        working-directory: gp-api
+        run: |
+          npm ci || npm install
+          npm run build --if-present
+          PORT=3001 npm start &
+          sleep 10
+
+      - name: Checkout gp-explorer (private)
+        uses: actions/checkout@v4
+        with:
+          repository: bakkaliomar500/gp-explorer
+          token: ${{ secrets.GH_PAT }}
+          ref: main
+          path: gp-explorer
+          fetch-depth: 1
+
+      - name: Install & run gp-explorer
+        working-directory: gp-explorer
+        run: |
+          npm ci || npm install
+          npm run build --if-present
+          npm start
