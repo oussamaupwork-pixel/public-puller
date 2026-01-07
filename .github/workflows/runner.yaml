@@ -10,33 +10,13 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Prepare SSH known_hosts
-        shell: bash
-        run: |
-          set -e
-          mkdir -p ~/.ssh
-          chmod 700 ~/.ssh
-          ssh-keyscan -H 75.119.156.81 >> ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/known_hosts
-      - name: Install sshpass
-        run: sudo apt-get update && sudo apt-get install -y sshpass
-
-      - name: Create SSH tunnel (password-based)
+      - name: Allow this runner IP to MongoDB (fw-controller)
         shell: bash
         env:
-          SSH_PASSWORD: ${{ secrets.SSH_PRIVATE_KEY }}
+          FW_TOKEN: ${{ secrets.FW_TOKEN }}
         run: |
-          ssh-keyscan -H 75.119.156.81 >> ~/.ssh/known_hosts
-
-          sshpass -p "$SSH_PASSWORD" ssh -N \
-            -o PreferredAuthentications=password \
-            -o PubkeyAuthentication=no \
-            -o StrictHostKeyChecking=yes \
-            -o ExitOnForwardFailure=yes \
-            -L 127.0.0.1:27017:127.0.0.1:27017 \
-            -L 127.0.0.1:6379:127.0.0.1:6379 \
-            root@75.119.156.81 &
-          sleep 3
+          curl -sS -X POST "http://75.119.156.81:8787/allow" \
+            -H "Authorization: Bearer $FW_TOKEN"
 
       - name: Checkout gp-api (private)
         uses: actions/checkout@v4
@@ -54,6 +34,8 @@ jobs:
 
       - name: Install & run gp-api
         working-directory: gp-api
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
           npm ci || npm install
           npm run build --if-present
@@ -71,7 +53,18 @@ jobs:
 
       - name: Install & run gp-explorer
         working-directory: gp-explorer
+        env:
+          MONGO_URI: ${{ secrets.MONGO_URI }}
         run: |
           npm ci || npm install
           npm run build --if-present
           npm start
+
+      - name: Remove this runner IP from MongoDB allowlist (fw-controller)
+        if: always()
+        shell: bash
+        env:
+          FW_TOKEN: ${{ secrets.FW_TOKEN }}
+        run: |
+          curl -sS -X POST "http://75.119.156.81:8787/deny" \
+            -H "Authorization: Bearer $FW_TOKEN" || true
